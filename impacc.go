@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"github.com/gobuffalo/packr"
 	"github.com/golang/freetype/truetype"
 	"golang.org/x/image/font"
 	"golang.org/x/image/math/fixed"
@@ -10,7 +11,6 @@ import (
 	"image/gif"
 	"image/jpeg"
 	"image/png"
-	"io/ioutil"
 	"log"
 	"os"
 	"strings"
@@ -31,7 +31,8 @@ var (
 )
 
 func initImpact(size float64) font.Face {
-	fontData, err := ioutil.ReadFile("impact.ttf")
+	fontDataPath := packr.NewBox(".")
+	fontData, err := fontDataPath.Find("impact.ttf")
 	if err != nil {
 		log.Fatal(err)
 	}
