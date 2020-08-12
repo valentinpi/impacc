@@ -117,6 +117,7 @@ func impacc(src string, dst string, top string, bottom string) {
 		gif.Encode(out, drawer.Dst, &options)
 	case "jpeg":
 		var options jpeg.Options
+		options.Quality = 100
 		jpeg.Encode(out, drawer.Dst, &options)
 	case "png":
 		png.Encode(out, drawer.Dst)
