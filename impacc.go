@@ -18,9 +18,11 @@ import (
 
 const (
 	// FontProp Antiproportional for font size for impact font text
-	FontProp = 10.0
+	FontProp = 16.0
 	// Offset Offset of the text from the top and bottom
 	Offset = 10
+	// Shadow Thickness of text shadow
+	Shadow = 2
 )
 
 var (
@@ -30,7 +32,7 @@ var (
 	bottomText = flag.String("b", "", "Bottom text")
 )
 
-func initImpact(size float64) font.Face {
+func initImpact() *truetype.Font {
 	fontDataPath := packr.NewBox(".")
 	fontData, err := fontDataPath.Find("impact.ttf")
 	if err != nil {
@@ -41,7 +43,10 @@ func initImpact(size float64) font.Face {
 	if err != nil {
 		log.Fatal(err)
 	}
+	return font
+}
 
+func initFace(font *truetype.Font, size float64) font.Face {
 	var options truetype.Options
 	options.Size = size
 
@@ -49,20 +54,26 @@ func initImpact(size float64) font.Face {
 	return face
 }
 
-func drawImpactStr(drawer font.Drawer, s string, p fixed.Point26_6) {
+func drawImpactStr(impact font.Face, drawer font.Drawer, s string, p fixed.Point26_6) {
 	// Get normalized forwarding
 	drawer.Dot = fixed.P(0, 0)
 	bounds, advance := drawer.BoundString(s)
 	height := bounds.Max.Y - bounds.Min.Y
 
-	// Draw at center
+	// Draw at center of p
+	// Calculate from perspective of baseline
 	drawer.Dot = fixed.Point26_6{
 		X: p.X - advance/2,
 		Y: p.Y + height/2}
-	drawer.DrawString(s)
+	for _, c := range s {
+		drawer.DrawString(string(c))
+	}
 }
 
 func impacc(src string, dst string, top string, bottom string) {
+	// Load font
+	impactFont := initImpact()
+
 	// Read in
 	file, err := os.Open(src)
 	if err != nil {
@@ -80,7 +91,8 @@ func impacc(src string, dst string, top string, bottom string) {
 	fontSize := float64(height) / FontProp
 
 	// Read font and initialize face
-	impact := initImpact(fontSize)
+	impact := initFace(impactFont, fontSize-Shadow)
+	defer impact.Close()
 
 	// Edit image
 	drawImg := image.NewRGBA(bounds)
@@ -94,12 +106,14 @@ func impacc(src string, dst string, top string, bottom string) {
 
 	// Top text
 	drawImpactStr(
+		impact,
 		drawer,
 		strings.ToUpper(top),
 		fixed.P(width/2, int(fontSize/2)+Offset))
 
 	// Bottom text
 	drawImpactStr(
+		impact,
 		drawer,
 		strings.ToUpper(bottom),
 		fixed.P(width/2, height-int(fontSize/2)-Offset))
