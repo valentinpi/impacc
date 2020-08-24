@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"github.com/gobuffalo/packr"
 	"github.com/golang/freetype/truetype"
 	"golang.org/x/image/font"
@@ -21,8 +22,8 @@ const (
 	FontProp = 16.0
 	// Offset Offset of the text from the top and bottom
 	Offset = 10
-	// Shadow Thickness of text shadow
-	Shadow = 2
+	// OutlineProp Thickness of text outline
+	OutlineProp = 0.10
 )
 
 var (
@@ -30,6 +31,7 @@ var (
 	outPath    = flag.String("o", "", "Output file")
 	topText    = flag.String("t", "", "Top text")
 	bottomText = flag.String("b", "", "Bottom text")
+	fontSize   = 0.0
 )
 
 func initImpact() *truetype.Font {
@@ -43,6 +45,7 @@ func initImpact() *truetype.Font {
 	if err != nil {
 		log.Fatal(err)
 	}
+
 	return font
 }
 
@@ -54,19 +57,63 @@ func initFace(font *truetype.Font, size float64) font.Face {
 	return face
 }
 
-func drawImpactStr(impact font.Face, drawer font.Drawer, s string, p fixed.Point26_6) {
+// Does NOT preserve the drawer given
+// Only requires the Dst field to be initialized with the output buffer
+func drawImpactStr(impactFont *truetype.Font, drawer *font.Drawer, s string, p fixed.Point26_6) {
+	outlineOffset := fontSize * OutlineProp
+	impact := initFace(impactFont, fontSize-outlineOffset)
+	impactOutline := initFace(impactFont, fontSize)
+	defer impact.Close()
+	defer impactOutline.Close()
+
 	// Get normalized forwarding
 	drawer.Dot = fixed.P(0, 0)
+
+	// The outline is bigger
+	drawer.Face = impactOutline
+
 	bounds, advance := drawer.BoundString(s)
 	height := bounds.Max.Y - bounds.Min.Y
 
-	// Draw at center of p
+	// Draw around p (center text in terms of p)
 	// Calculate from perspective of baseline
 	drawer.Dot = fixed.Point26_6{
 		X: p.X - advance/2,
 		Y: p.Y + height/2}
+
 	for _, c := range s {
+		// Render outline
+		drawer.Face = impactOutline
+		drawer.Src = image.Black
+
+		_, advanceOut := drawer.BoundString(string(c))
+
+		// Save position before drawing (DrawString advances the Dot)
+		begin := drawer.Dot
+
 		drawer.DrawString(string(c))
+
+		// Save position after being finished for the next character
+		end := drawer.Dot
+
+		// Render inside
+		drawer.Face = impact
+		drawer.Src = image.White
+
+		// Restore original position (before outline)
+		drawer.Dot = begin
+
+		_, advanceIn := drawer.BoundString(string(c))
+
+		// Add offset from outline
+		offsetIn := fixed.Point26_6{
+			X: (advanceOut - advanceIn).Mul(fixed.Int26_6(1 << 5)),
+			Y: -fixed.I(int(outlineOffset / 2))}
+		drawer.Dot = drawer.Dot.Add(offsetIn)
+		fmt.Println(offsetIn)
+
+		drawer.DrawString(string(c))
+		drawer.Dot = end
 	}
 }
 
@@ -74,7 +121,7 @@ func impacc(src string, dst string, top string, bottom string) {
 	// Load font
 	impactFont := initImpact()
 
-	// Read in
+	// Read image
 	file, err := os.Open(src)
 	if err != nil {
 		log.Fatal(err)
@@ -88,33 +135,28 @@ func impacc(src string, dst string, top string, bottom string) {
 
 	bounds := img.Bounds()
 	width, height := bounds.Max.X-bounds.Min.X, bounds.Max.Y-bounds.Min.Y
-	fontSize := float64(height) / FontProp
+	fontSize = float64(height) / FontProp
 
-	// Read font and initialize face
-	impact := initFace(impactFont, fontSize-Shadow)
-	defer impact.Close()
+	// Read font and initialize faces
 
-	// Edit image
+	// Set draw buffer
 	drawImg := image.NewRGBA(bounds)
 	draw.Draw(drawImg, bounds, img, image.Point{0, 0}, draw.Src)
 
 	drawer := font.Drawer{
-		Face: impact,
-		Src:  image.White,
-		Dst:  drawImg,
-		Dot:  fixed.P(0, 0)}
+		Dst: drawImg}
 
 	// Top text
 	drawImpactStr(
-		impact,
-		drawer,
+		impactFont,
+		&drawer,
 		strings.ToUpper(top),
 		fixed.P(width/2, int(fontSize/2)+Offset))
 
 	// Bottom text
 	drawImpactStr(
-		impact,
-		drawer,
+		impactFont,
+		&drawer,
 		strings.ToUpper(bottom),
 		fixed.P(width/2, height-int(fontSize/2)-Offset))
 
