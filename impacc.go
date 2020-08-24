@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"github.com/gobuffalo/packr"
 	"github.com/golang/freetype/truetype"
 	"golang.org/x/image/font"
@@ -22,8 +21,8 @@ const (
 	FontProp = 16.0
 	// Offset Offset of the text from the top and bottom
 	Offset = 10
-	// OutlineProp Thickness of text outline
-	OutlineProp = 0.10
+	// Outline Thickness of text outline
+	Outline = 2
 )
 
 var (
@@ -50,27 +49,21 @@ func initImpact() *truetype.Font {
 }
 
 func initFace(font *truetype.Font, size float64) font.Face {
-	var options truetype.Options
-	options.Size = size
-
-	face := truetype.NewFace(font, &options)
+	face := truetype.NewFace(font, &truetype.Options{
+		Size: size})
 	return face
 }
 
 // Does NOT preserve the drawer given
 // Only requires the Dst field to be initialized with the output buffer
 func drawImpactStr(impactFont *truetype.Font, drawer *font.Drawer, s string, p fixed.Point26_6) {
-	outlineOffset := fontSize * OutlineProp
-	impact := initFace(impactFont, fontSize-outlineOffset)
-	impactOutline := initFace(impactFont, fontSize)
+	impact := initFace(impactFont, fontSize)
 	defer impact.Close()
-	defer impactOutline.Close()
 
 	// Get normalized forwarding
 	drawer.Dot = fixed.P(0, 0)
 
-	// The outline is bigger
-	drawer.Face = impactOutline
+	drawer.Face = impact
 
 	bounds, advance := drawer.BoundString(s)
 	height := bounds.Max.Y - bounds.Min.Y
@@ -83,35 +76,63 @@ func drawImpactStr(impactFont *truetype.Font, drawer *font.Drawer, s string, p f
 
 	for _, c := range s {
 		// Render outline
-		drawer.Face = impactOutline
 		drawer.Src = image.Black
-
-		_, advanceOut := drawer.BoundString(string(c))
 
 		// Save position before drawing (DrawString advances the Dot)
 		begin := drawer.Dot
 
+		outlineOffset := fixed.I(Outline)
+		// Right
+		drawer.Dot = begin.Add(fixed.Point26_6{
+			X: +outlineOffset,
+			Y: 0})
 		drawer.DrawString(string(c))
-
-		// Save position after being finished for the next character
+		// Save position after being finished with the furthest character
 		end := drawer.Dot
 
-		// Render inside
-		drawer.Face = impact
-		drawer.Src = image.White
+		// Bottom right
+		drawer.Dot = begin.Add(fixed.Point26_6{
+			X: 0,
+			Y: -outlineOffset})
+		drawer.DrawString(string(c))
+		// Bottom
+		drawer.Dot = begin.Add(fixed.Point26_6{
+			X: -outlineOffset,
+			Y: 0})
+		drawer.DrawString(string(c))
+		// Bottom left
+		drawer.Dot = begin.Add(fixed.Point26_6{
+			X: -outlineOffset,
+			Y: 0})
+		drawer.DrawString(string(c))
+		// Left
+		drawer.Dot = begin.Add(fixed.Point26_6{
+			X: 0,
+			Y: +outlineOffset})
+		drawer.DrawString(string(c))
+		// Top left
+		drawer.Dot = begin.Add(fixed.Point26_6{
+			X: 0,
+			Y: +outlineOffset})
+		drawer.DrawString(string(c))
+		// Top
+		drawer.Dot = begin.Add(fixed.Point26_6{
+			X: +outlineOffset,
+			Y: 0})
+		drawer.DrawString(string(c))
+		// Top right
+		drawer.Dot = begin.Add(fixed.Point26_6{
+			X: +outlineOffset,
+			Y: 0})
+		drawer.DrawString(string(c))
 
 		// Restore original position (before outline)
 		drawer.Dot = begin
 
-		_, advanceIn := drawer.BoundString(string(c))
+		// White font color
+		drawer.Src = image.White
 
-		// Add offset from outline
-		offsetIn := fixed.Point26_6{
-			X: (advanceOut - advanceIn).Mul(fixed.Int26_6(1 << 5)),
-			Y: -fixed.I(int(outlineOffset / 2))}
-		drawer.Dot = drawer.Dot.Add(offsetIn)
-		fmt.Println(offsetIn)
-
+		// Render inside
 		drawer.DrawString(string(c))
 		drawer.Dot = end
 	}
